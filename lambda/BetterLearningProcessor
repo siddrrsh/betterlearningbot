@@ -1,0 +1,149 @@
+'use strict';
+
+ /**
+  */
+
+ // --------------- Helpers that build all of the responses -----------------------
+
+function elicitSlot(sessionAttributes, intentName, slots, slotToElicit, message) {
+    return {
+        sessionAttributes,
+        dialogAction: {
+            type: 'ElicitSlot',
+            intentName,
+            slots,
+            slotToElicit,
+            message,
+        },
+    };
+}
+
+function confirmIntent(sessionAttributes, intentName, slots, message) {
+    return {
+        sessionAttributes,
+        dialogAction: {
+            type: 'ConfirmIntent',
+            intentName,
+            slots,
+            message,
+        },
+    };
+}
+
+function close(sessionAttributes, fulfillmentState, message) {
+    return {
+        sessionAttributes,
+        dialogAction: {
+            type: 'Close',
+            fulfillmentState,
+            message,
+        },
+    };
+}
+
+function delegate(sessionAttributes, slots) {
+    return {
+        sessionAttributes,
+        dialogAction: {
+            type: 'Delegate',
+            slots,
+        },
+    };
+}
+
+// ---------------- Helper Functions --------------------------------------------------
+
+
+function buildValidationResult(isValid, violatedSlot, messageContent) {
+    return {
+        isValid,
+        violatedSlot,
+        message: { contentType: 'PlainText', content: messageContent },
+    };
+}
+
+
+function validate(slots) {
+    console.log(`validate userAge=${slots.UserAge}, userLanguage=${slots.UserLanguage}`);
+
+    const userAge = slots.UserAge;
+    const userLanguage = slots.UserLanguage;
+
+    if (userAge && ((userAge < 5) || (userAge > 8))) {
+        return buildValidationResult(false, 'UserAge', 'This assessment is only for five to eight year old kids.');
+    }
+
+    if (userLanguage && (userLanguage == "No")) {
+        return buildValidationResult(false, 'UserLanguage', 'Presently, you can only take this assessment if you speak English.');
+    }
+    return { isValid: true };
+}
+
+/**
+ * Performs dialog management and fulfillment for WelcomeUserIntent
+ *
+ * Beyond fulfillment, the implementation for this intent demonstrates the following:
+ *   1) Use of elicitSlot in slot validation and re-prompting
+ *   2) Use of sessionAttributes to pass information that can be used to guide conversation
+ */
+function welcomeUser(intentRequest, callback) {
+    const userAge = intentRequest.currentIntent.slots.UserAge;
+    const userLanguage = intentRequest.currentIntent.slots.UserLanguage;
+
+    const sessionAttributes = intentRequest.sessionAttributes;
+
+
+    if (intentRequest.invocationSource === 'DialogCodeHook') {
+        // Validate any slots which have been specified.  If any are invalid, re-elicit for their value
+        const validationResult = validate(intentRequest.currentIntent.slots);
+        if (!validationResult.isValid) {
+            const slots = intentRequest.currentIntent.slots;
+            slots[`${validationResult.violatedSlot}`] = null;
+            callback(elicitSlot(sessionAttributes, intentRequest.currentIntent.name,
+            slots, validationResult.violatedSlot, validationResult.message));
+            return;
+        }
+
+        callback(delegate(sessionAttributes, intentRequest.currentIntent.slots));
+        return;
+    }
+
+    callback(close(sessionAttributes, 'Fulfilled',
+    { contentType: 'PlainText', content: 'Thanks, you can now take the Assessment test by tapping Mic and saying Start First Test'}))
+}
+
+
+ // --------------- Intents -----------------------
+
+/**
+ * Called when the user specifies an intent for this skill.
+ */
+function dispatch(intentRequest, callback) {
+    console.log(`dispatch userId=${intentRequest.userId}, intentName=${intentRequest.currentIntent.name}`);
+
+    const intentName = intentRequest.currentIntent.name;
+
+    // Dispatch to your skill's intent handlers
+    if (intentName === 'WelcomeUserIntent') {
+        return welcomeUser(intentRequest, callback);
+    } 
+    
+    throw new Error(`Intent with name ${intentName} not supported`);
+}
+
+// --------------- Main handler -----------------------
+
+// Route the incoming request based on intent.
+// The JSON body of the request is provided in the event slot.
+exports.handler = (event, context, callback) => {
+    try {
+        console.log(`event.bot.name=${event.bot.name}`);
+
+        if (event.bot.name != 'BetterLearning') {
+             callback('Invalid Bot Name');
+        }
+        dispatch(event, (response) => callback(null, response));
+    } catch (err) {
+        callback(err);
+    }
+};
